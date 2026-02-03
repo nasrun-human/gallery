@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "install-all": "npm install",
-    "build-web": "cd web && vite build",
+    "build-web": "vite build",
     "start": "node index.js",
     "build": "npm install && npm run build-web"
   },
