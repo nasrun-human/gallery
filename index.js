@@ -17,9 +17,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 2. Serve Frontend Static Files (Built React App)
-const webDistPath = fs.existsSync(path.join(__dirname, '../web/dist')) 
-    ? path.join(__dirname, '../web/dist') 
-    : path.join(__dirname, 'web/dist');
+const webDistPath = path.join(__dirname, 'dist'); // Adjusted path: 'dist' is now in root because we build in root
 app.use(express.static(webDistPath));
 
 // Ensure uploads directory exists
