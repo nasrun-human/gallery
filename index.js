@@ -38,8 +38,12 @@ app.use('/api/media', mediaRoutes);
 // 3. Handle React Routing (SPA) - Send index.html for any other requests
 // Fix: Use a regex or simple middleware to catch non-API routes
 app.get(/^(?!\/api).+/, (req, res) => {
-    const indexHtmlPath = path.join(__dirname, 'web/dist/index.html'); // Adjusted path for Render root structure
-    res.sendFile(indexHtmlPath);
+    const indexHtmlPath = path.join(__dirname, 'web/dist/index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+        res.sendFile(indexHtmlPath);
+    } else {
+        res.status(404).send('Frontend build not found. Please run build command.');
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
