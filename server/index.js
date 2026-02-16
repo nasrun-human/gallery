@@ -18,7 +18,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 2. Serve Frontend Static Files (Built React App)
-const webDistPath = path.join(__dirname, 'dist'); // Adjusted path: 'dist' is now in root because we build in root
+const webDistPath = path.join(__dirname, '../dist'); // Adjusted path: 'dist' is in project root, but this file is in 'server'
 app.use(express.static(webDistPath));
 
 // Ensure uploads directory exists
@@ -37,7 +37,7 @@ app.use('/api/media', mediaRoutes);
 // 3. Handle React Routing (SPA) - Send index.html for any other requests
 // Fix: Use a regex or simple middleware to catch non-API routes
 app.get(/^(?!\/api).+/, (req, res) => {
-    const indexHtmlPath = path.join(__dirname, 'dist/index.html');
+    const indexHtmlPath = path.join(__dirname, '../dist/index.html');
     if (fs.existsSync(indexHtmlPath)) {
         res.sendFile(indexHtmlPath);
     } else {
