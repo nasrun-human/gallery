@@ -3,20 +3,53 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { db } = require('../database');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const router = express.Router();
 
-// Configure Multer for storage
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
-});
+// Configure Cloudinary
+// Note: Credentials will be loaded from .env
+if (process.env.CLOUDINARY_CLOUD_NAME) {
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+}
 
-const upload = multer({ storage });
+// Check if Cloudinary is configured
+const isCloudinaryConfigured = () => !!process.env.CLOUDINARY_CLOUD_NAME;
+
+// Configure Storage (Cloudinary vs Local)
+let upload;
+
+if (isCloudinaryConfigured()) {
+    const storage = new CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'gallery-uploads',
+            allowed_formats: ['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov'],
+            resource_type: 'auto', // Auto-detect image or video
+        },
+    });
+    upload = multer({ storage: storage });
+} else {
+    // Fallback to local storage if no Cloudinary creds
+    const storage = multer.diskStorage({
+        destination: (req, file, cb) => {
+            const uploadDir = 'uploads/';
+            if (!fs.existsSync(uploadDir)) {
+                fs.mkdirSync(uploadDir);
+            }
+            cb(null, uploadDir);
+        },
+        filename: (req, file, cb) => {
+            cb(null, Date.now() + path.extname(file.originalname));
+        }
+    });
+    upload = multer({ storage });
+}
 
 // Middleware to check auth (simplified)
 const authenticateToken = (req, res, next) => {
@@ -37,10 +70,18 @@ const authenticateToken = (req, res, next) => {
 router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
     const { description, type } = req.body; // type: 'image' or 'video'
     const userId = req.user.id;
-    
+
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const filename = req.file.filename;
+
+    // Determine filename/path to store in DB
+    // If Cloudinary: req.file.path (full URL)
+    // If Local: req.file.filename (just name)
+    let filename;
+    if (isCloudinaryConfigured()) {
+        filename = req.file.path; // Store full Cloudinary URL
+    } else {
+        filename = req.file.filename; // Store local filename
+    }
 
     try {
         const result = await db.query(

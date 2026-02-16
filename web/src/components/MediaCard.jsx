@@ -7,6 +7,16 @@ const MediaCard = ({ item }) => {
     const { user } = useAuth();
     const [saved, setSaved] = useState(false);
 
+    // Determine if the source is a full URL (Cloudinary) or a local path
+    const getMediaSrc = (filename) => {
+        if (filename.startsWith('http')) {
+            return filename;
+        }
+        return `/uploads/${filename}`;
+    };
+
+    const mediaSrc = getMediaSrc(item.filename);
+
     const handleSave = async () => {
         if (!user) return alert('Please login to save');
         try {
@@ -19,12 +29,12 @@ const MediaCard = ({ item }) => {
 
     const handleDownload = async () => {
         try {
-            const response = await fetch(`/uploads/${item.filename}`);
+            const response = await fetch(mediaSrc);
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = item.filename;
+            a.download = item.filename.split('/').pop(); // Handle full URL filename
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -39,13 +49,13 @@ const MediaCard = ({ item }) => {
             <div className="relative aspect-square bg-gray-100 overflow-hidden">
                 {item.type === 'video' ? (
                     <video 
-                        src={`/uploads/${item.filename}`} 
+                        src={mediaSrc} 
                         className="w-full h-full object-cover" 
                         controls 
                     />
                 ) : (
                     <img 
-                        src={`/uploads/${item.filename}`} 
+                        src={mediaSrc} 
                         alt={item.description} 
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                     />
