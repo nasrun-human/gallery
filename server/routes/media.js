@@ -25,7 +25,8 @@ const authenticateToken = (req, res, next) => {
     if (!token) return res.sendStatus(401);
 
     const jwt = require('jsonwebtoken');
-    jwt.verify(token, 'supersecretkey', (err, user) => {
+    const SECRET_KEY = process.env.SESSION_SECRET || 'supersecretkey';
+    jwt.verify(token, SECRET_KEY, (err, user) => {
         if (err) return res.sendStatus(403);
         req.user = user;
         next();
@@ -33,65 +34,76 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Upload Media
-router.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
+router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
     const { description, type } = req.body; // type: 'image' or 'video'
     const userId = req.user.id;
+    
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    
     const filename = req.file.filename;
 
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    db.run(
-        `INSERT INTO media (user_id, filename, type, description) VALUES (?, ?, ?, ?)`,
-        [userId, filename, type || 'image', description || ''],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: 'Upload successful', media: { id: this.lastID, filename, description } });
-        }
-    );
+    try {
+        const result = await db.query(
+            `INSERT INTO media (user_id, filename, type, description) VALUES ($1, $2, $3, $4) RETURNING id`,
+            [userId, filename, type || 'image', description || '']
+        );
+        const newMediaId = result.rows[0].id;
+        res.json({ message: 'Upload successful', media: { id: newMediaId, filename, description } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get All Media
-router.get('/', (req, res) => {
-    db.all(`SELECT media.*, users.username FROM media JOIN users ON media.user_id = users.id ORDER BY media.created_at DESC`, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get('/', async (req, res) => {
+    try {
+        const result = await db.query(`SELECT media.*, users.username FROM media JOIN users ON media.user_id = users.id ORDER BY media.created_at DESC`);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Download Media (File access is handled by static middleware, but this is API to get info)
-router.get('/:id', (req, res) => {
-    db.get(`SELECT * FROM media WHERE id = ?`, [req.params.id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+router.get('/:id', async (req, res) => {
+    try {
+        const result = await db.query(`SELECT * FROM media WHERE id = $1`, [req.params.id]);
+        const row = result.rows[0];
         if (!row) return res.status(404).json({ error: 'Media not found' });
         res.json(row);
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Save/Bookmark Media
-router.post('/save/:id', authenticateToken, (req, res) => {
+router.post('/save/:id', authenticateToken, async (req, res) => {
     const mediaId = req.params.id;
     const userId = req.user.id;
 
-    db.run(`INSERT INTO saved_media (user_id, media_id) VALUES (?, ?)`, [userId, mediaId], function(err) {
-        if (err) return res.status(400).json({ error: 'Already saved or error' });
+    try {
+        await db.query(`INSERT INTO saved_media (user_id, media_id) VALUES ($1, $2)`, [userId, mediaId]);
         res.json({ message: 'Media saved' });
-    });
+    } catch (err) {
+        res.status(400).json({ error: 'Already saved or error' });
+    }
 });
 
 // Get Saved Media
-router.get('/user/saved', authenticateToken, (req, res) => {
+router.get('/user/saved', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    db.all(
-        `SELECT media.*, users.username FROM saved_media 
-         JOIN media ON saved_media.media_id = media.id 
-         JOIN users ON media.user_id = users.id
-         WHERE saved_media.user_id = ?`,
-        [userId],
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        }
-    );
+    try {
+        const result = await db.query(
+            `SELECT media.*, users.username FROM saved_media 
+             JOIN media ON saved_media.media_id = media.id 
+             JOIN users ON media.user_id = users.id
+             WHERE saved_media.user_id = $1`,
+            [userId]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

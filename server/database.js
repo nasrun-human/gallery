@@ -1,61 +1,68 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
+require('dotenv').config();
 const bcrypt = require('bcryptjs'); // Import bcrypt for password hashing
 
-const dbPath = path.resolve(__dirname, 'gallery.db');
-const db = new sqlite3.Database(dbPath);
+// Connection string from environment variable
+// Format: postgresql://postgres:[PASSWORD]@[PROJECT_ID].supabase.co:5432/postgres
+const connectionString = process.env.DATABASE_URL;
 
-const initDatabase = () => {
-    db.serialize(() => {
+if (!connectionString) {
+    console.warn("WARNING: DATABASE_URL is missing in .env file. Please set it to connect to Supabase.");
+}
+
+const db = new Pool({
+    connectionString,
+    ssl: {
+        rejectUnauthorized: false // Required for Supabase connection from some environments
+    }
+});
+
+const initDatabase = async () => {
+    try {
         // Users Table
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        await db.query(`CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
             username TEXT UNIQUE,
             password TEXT,
             email TEXT,
             phone TEXT,
             role TEXT DEFAULT 'user',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
 
         // Media Table (Images/Videos)
-        db.run(`CREATE TABLE IF NOT EXISTS media (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
+        await db.query(`CREATE TABLE IF NOT EXISTS media (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
             filename TEXT,
             type TEXT, -- 'image' or 'video'
             description TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
 
         // Saved/Bookmarked Media Table
-        db.run(`CREATE TABLE IF NOT EXISTS saved_media (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            media_id INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(media_id) REFERENCES media(id)
+        await db.query(`CREATE TABLE IF NOT EXISTS saved_media (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            media_id INTEGER REFERENCES media(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
         
         // Check and create default admin user
-        db.get("SELECT * FROM users WHERE username = 'admin'", (err, row) => {
-            if (!row) {
-                const hashedPassword = bcrypt.hashSync('admin1234', 10);
-                db.run(
-                    `INSERT INTO users (username, password, email, phone, role) VALUES (?, ?, ?, ?, ?)`,
-                    ['admin', hashedPassword, 'admin@example.com', '0000000000', 'admin'],
-                    (err) => {
-                        if (err) console.error(err.message);
-                        else console.log('Default admin user created: admin / admin1234');
-                    }
-                );
-            }
-        });
+        const adminCheck = await db.query("SELECT * FROM users WHERE username = $1", ['admin']);
+        if (adminCheck.rows.length === 0) {
+            const hashedPassword = bcrypt.hashSync('admin1234', 10);
+            await db.query(
+                `INSERT INTO users (username, password, email, phone, role) VALUES ($1, $2, $3, $4, $5)`,
+                ['admin', hashedPassword, 'admin@example.com', '0000000000', 'admin']
+            );
+            console.log('Default admin user created: admin / admin1234');
+        }
 
-        console.log('Database initialized');
-    });
+        console.log('Database initialized (PostgreSQL)');
+    } catch (err) {
+        console.error('Error initializing database:', err);
+    }
 };
 
 module.exports = { db, initDatabase };
